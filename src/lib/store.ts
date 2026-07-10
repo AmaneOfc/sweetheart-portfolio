@@ -129,13 +129,39 @@ export function isAdmin(): boolean {
   if (typeof window === "undefined") return false;
   return localStorage.getItem(ADMIN_KEY) === "1";
 }
-export function loginAdmin(code: string): boolean {
-  if (code === ADMIN_PASSCODE) {
+export async function loginAdmin(code: string): Promise<{ ok: boolean; error?: string }> {
+  const lock = adminLockRemainingMs();
+  if (lock > 0) {
+    return { ok: false, error: `Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil(lock / 1000)} detik.` };
+  }
+  const stored = await getStoredHash();
+  const input = await sha256(code);
+  if (timingSafeEqual(stored, input)) {
+    writeAttempts({ count: 0, lockedUntil: 0 });
     localStorage.setItem(ADMIN_KEY, "1");
     window.dispatchEvent(new CustomEvent("bucin:admin"));
-    return true;
+    return { ok: true };
   }
-  return false;
+  const s = readAttempts();
+  const count = s.count + 1;
+  const lockedUntil = count >= MAX_ATTEMPTS ? Date.now() + LOCKOUT_MS : 0;
+  writeAttempts({ count: count >= MAX_ATTEMPTS ? 0 : count, lockedUntil });
+  return {
+    ok: false,
+    error: lockedUntil
+      ? `Terlalu banyak percobaan. Terkunci ${Math.ceil(LOCKOUT_MS / 1000)} detik.`
+      : `Kode salah. Sisa percobaan: ${MAX_ATTEMPTS - count}.`,
+  };
+}
+
+export async function changeAdminPasscode(current: string, next: string): Promise<{ ok: boolean; error?: string }> {
+  if (next.length < 6) return { ok: false, error: "Passcode baru minimal 6 karakter." };
+  const stored = await getStoredHash();
+  const cur = await sha256(current);
+  if (!timingSafeEqual(stored, cur)) return { ok: false, error: "Passcode saat ini salah." };
+  const newHash = await sha256(next);
+  localStorage.setItem(ADMIN_HASH_KEY, newHash);
+  return { ok: true };
 }
 export function logoutAdmin() {
   localStorage.removeItem(ADMIN_KEY);
