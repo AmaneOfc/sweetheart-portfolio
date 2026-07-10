@@ -29,6 +29,19 @@ function Admin() {
 function LoginGate() {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [lockLeft, setLockLeft] = useState(0);
+
+  useEffect(() => {
+    const tick = () => setLockLeft(adminLockRemainingMs());
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const locked = lockLeft > 0;
+
   return (
     <div className="max-w-md mx-auto px-4 py-16">
       <div className="glass rounded-3xl p-8 shadow-soft animate-scale-in">
@@ -40,26 +53,54 @@ function LoginGate() {
           Masuk untuk mengubah profil, musik, dan konten.
         </p>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (loginAdmin(code)) setErr("");
-            else setErr("Kode salah.");
+            if (busy || locked) return;
+            setBusy(true);
+            const res = await loginAdmin(code);
+            setBusy(false);
+            if (res.ok) {
+              setErr("");
+              setCode("");
+            } else {
+              setErr(res.error ?? "Kode salah.");
+            }
           }}
           className="mt-6 space-y-3"
         >
-          <input
-            type="password"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="Passcode admin"
-            className="w-full rounded-full px-5 py-3 bg-input/50 border focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-          {err && <div className="text-destructive text-sm text-center">{err}</div>}
-          <button className="w-full rounded-full bg-primary text-primary-foreground py-3 font-medium">
-            Masuk
+          <div className="relative">
+            <input
+              type={show ? "text" : "password"}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Passcode admin"
+              autoComplete="current-password"
+              disabled={locked || busy}
+              className="w-full rounded-full px-5 py-3 pr-12 bg-input/50 border focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground p-1"
+              aria-label={show ? "Sembunyikan" : "Tampilkan"}
+            >
+              {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {locked && (
+            <div className="text-destructive text-sm text-center">
+              Terkunci. Coba lagi dalam {Math.ceil(lockLeft / 1000)} detik.
+            </div>
+          )}
+          {!locked && err && <div className="text-destructive text-sm text-center">{err}</div>}
+          <button
+            disabled={locked || busy || !code}
+            className="w-full rounded-full bg-primary text-primary-foreground py-3 font-medium disabled:opacity-60"
+          >
+            {busy ? "Memeriksa…" : "Masuk"}
           </button>
           <p className="text-xs text-muted-foreground text-center">
-            Passcode default: <code className="bg-muted px-1.5 py-0.5 rounded">{ADMIN_PASSCODE}</code>
+            Passcode default (bisa diubah setelah login): <code className="bg-muted px-1.5 py-0.5 rounded">loveislove</code>
           </p>
         </form>
       </div>
