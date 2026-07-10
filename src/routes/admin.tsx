@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useProfile, isAdmin, loginAdmin, logoutAdmin, fileToDataURL, ADMIN_PASSCODE, type BucinProfile } from "@/lib/store";
+import { useProfile, isAdmin, loginAdmin, logoutAdmin, fileToDataURL, changeAdminPasscode, adminLockRemainingMs, type BucinProfile } from "@/lib/store";
 import { useMusic } from "@/lib/music";
-import { Lock, LogOut, Save, Upload, Trash2, Plus, Music2, ImageIcon } from "lucide-react";
+import { Lock, LogOut, Save, Upload, Trash2, Plus, Music2, ImageIcon, KeyRound, Eye, EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
