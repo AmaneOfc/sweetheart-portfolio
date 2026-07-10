@@ -18,7 +18,48 @@ export type BucinProfile = {
 
 const KEY = "bucin.profile.v1";
 const ADMIN_KEY = "bucin.admin.token";
-export const ADMIN_PASSCODE = "loveislove"; // simple client-side gate
+const ADMIN_HASH_KEY = "bucin.admin.hash";
+const ADMIN_ATTEMPTS_KEY = "bucin.admin.attempts";
+export const ADMIN_PASSCODE = "loveislove"; // default; dapat diubah dari panel
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 60_000;
+
+async function sha256(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function getStoredHash(): Promise<string> {
+  const existing = localStorage.getItem(ADMIN_HASH_KEY);
+  if (existing) return existing;
+  const h = await sha256(ADMIN_PASSCODE);
+  localStorage.setItem(ADMIN_HASH_KEY, h);
+  return h;
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+type AttemptState = { count: number; lockedUntil: number };
+function readAttempts(): AttemptState {
+  try {
+    return JSON.parse(localStorage.getItem(ADMIN_ATTEMPTS_KEY) || "null") ?? { count: 0, lockedUntil: 0 };
+  } catch {
+    return { count: 0, lockedUntil: 0 };
+  }
+}
+function writeAttempts(s: AttemptState) {
+  localStorage.setItem(ADMIN_ATTEMPTS_KEY, JSON.stringify(s));
+}
+export function adminLockRemainingMs(): number {
+  if (typeof window === "undefined") return 0;
+  const s = readAttempts();
+  return Math.max(0, s.lockedUntil - Date.now());
+}
 
 const defaults: BucinProfile = {
   name1: "Rangga",
