@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useProfile, isAdmin, loginAdmin, logoutAdmin, fileToDataURL, ADMIN_PASSCODE, type BucinProfile } from "@/lib/store";
+import { useProfile, isAdmin, loginAdmin, logoutAdmin, fileToDataURL, changeAdminPasscode, adminLockRemainingMs, type BucinProfile } from "@/lib/store";
 import { useMusic } from "@/lib/music";
-import { Lock, LogOut, Save, Upload, Trash2, Plus, Music2, ImageIcon } from "lucide-react";
+import { Lock, LogOut, Save, Upload, Trash2, Plus, Music2, ImageIcon, KeyRound, Eye, EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -29,6 +29,19 @@ function Admin() {
 function LoginGate() {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [lockLeft, setLockLeft] = useState(0);
+
+  useEffect(() => {
+    const tick = () => setLockLeft(adminLockRemainingMs());
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const locked = lockLeft > 0;
+
   return (
     <div className="max-w-md mx-auto px-4 py-16">
       <div className="glass rounded-3xl p-8 shadow-soft animate-scale-in">
@@ -40,26 +53,54 @@ function LoginGate() {
           Masuk untuk mengubah profil, musik, dan konten.
         </p>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (loginAdmin(code)) setErr("");
-            else setErr("Kode salah.");
+            if (busy || locked) return;
+            setBusy(true);
+            const res = await loginAdmin(code);
+            setBusy(false);
+            if (res.ok) {
+              setErr("");
+              setCode("");
+            } else {
+              setErr(res.error ?? "Kode salah.");
+            }
           }}
           className="mt-6 space-y-3"
         >
-          <input
-            type="password"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="Passcode admin"
-            className="w-full rounded-full px-5 py-3 bg-input/50 border focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-          {err && <div className="text-destructive text-sm text-center">{err}</div>}
-          <button className="w-full rounded-full bg-primary text-primary-foreground py-3 font-medium">
-            Masuk
+          <div className="relative">
+            <input
+              type={show ? "text" : "password"}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Passcode admin"
+              autoComplete="current-password"
+              disabled={locked || busy}
+              className="w-full rounded-full px-5 py-3 pr-12 bg-input/50 border focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground p-1"
+              aria-label={show ? "Sembunyikan" : "Tampilkan"}
+            >
+              {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {locked && (
+            <div className="text-destructive text-sm text-center">
+              Terkunci. Coba lagi dalam {Math.ceil(lockLeft / 1000)} detik.
+            </div>
+          )}
+          {!locked && err && <div className="text-destructive text-sm text-center">{err}</div>}
+          <button
+            disabled={locked || busy || !code}
+            className="w-full rounded-full bg-primary text-primary-foreground py-3 font-medium disabled:opacity-60"
+          >
+            {busy ? "Memeriksa…" : "Masuk"}
           </button>
           <p className="text-xs text-muted-foreground text-center">
-            Passcode default: <code className="bg-muted px-1.5 py-0.5 rounded">{ADMIN_PASSCODE}</code>
+            Passcode default (bisa diubah setelah login): <code className="bg-muted px-1.5 py-0.5 rounded">loveislove</code>
           </p>
         </form>
       </div>
@@ -280,6 +321,10 @@ function AdminPanel() {
             </button>
           </div>
         </Section>
+
+        <Section title="Keamanan · Ubah Passcode" className="lg:col-span-2">
+          <ChangePasscodeForm />
+        </Section>
       </div>
 
       <div className="sticky bottom-4 mt-8 flex justify-center">
@@ -349,5 +394,98 @@ function PhotoPicker({ label, value, onChange }: { label: string; value?: string
         </button>
       )}
     </div>
+  );
+}
+
+function ChangePasscodeForm() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const strength = (() => {
+    let s = 0;
+    if (next.length >= 6) s++;
+    if (next.length >= 10) s++;
+    if (/[A-Z]/.test(next) && /[a-z]/.test(next)) s++;
+    if (/\d/.test(next)) s++;
+    if (/[^A-Za-z0-9]/.test(next)) s++;
+    return s; // 0-5
+  })();
+  const strengthLabel = ["Terlalu lemah", "Lemah", "Cukup", "Baik", "Kuat", "Sangat kuat"][strength];
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setMsg(null);
+        if (next !== confirm) {
+          setMsg({ ok: false, text: "Konfirmasi passcode tidak cocok." });
+          return;
+        }
+        setBusy(true);
+        const res = await changeAdminPasscode(current, next);
+        setBusy(false);
+        if (res.ok) {
+          setMsg({ ok: true, text: "Passcode berhasil diubah." });
+          setCurrent(""); setNext(""); setConfirm("");
+        } else {
+          setMsg({ ok: false, text: res.error ?? "Gagal mengubah passcode." });
+        }
+      }}
+      className="grid gap-3 sm:grid-cols-3"
+    >
+      <Field label="Passcode saat ini">
+        <input type={show ? "text" : "password"} className={inputCls} value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+      </Field>
+      <Field label="Passcode baru (min. 6)">
+        <input type={show ? "text" : "password"} className={inputCls} value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      </Field>
+      <Field label="Konfirmasi passcode baru">
+        <input type={show ? "text" : "password"} className={inputCls} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+      </Field>
+
+      {next && (
+        <div className="sm:col-span-3">
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full transition-all"
+              style={{
+                width: `${(strength / 5) * 100}%`,
+                background: strength >= 4 ? "hsl(var(--primary))" : strength >= 2 ? "#f59e0b" : "hsl(var(--destructive))",
+              }}
+            />
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">Kekuatan: {strengthLabel}</div>
+        </div>
+      )}
+
+      <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={busy || !current || !next || !confirm}
+          className="rounded-full bg-primary text-primary-foreground px-5 py-2.5 text-sm font-medium flex items-center gap-2 disabled:opacity-60"
+        >
+          <KeyRound className="w-4 h-4" />
+          {busy ? "Menyimpan…" : "Ubah Passcode"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          className="rounded-full glass px-4 py-2 text-sm flex items-center gap-2"
+        >
+          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {show ? "Sembunyikan" : "Tampilkan"}
+        </button>
+        {msg && (
+          <span className={`text-sm ${msg.ok ? "text-primary" : "text-destructive"}`}>{msg.text}</span>
+        )}
+      </div>
+      <p className="sm:col-span-3 text-xs text-muted-foreground">
+        Passcode disimpan sebagai hash SHA-256 di perangkat ini. Setelah 5 percobaan gagal, login akan terkunci sementara.
+      </p>
+    </form>
   );
 }
