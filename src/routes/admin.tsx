@@ -321,6 +321,10 @@ function AdminPanel() {
             </button>
           </div>
         </Section>
+
+        <Section title="Keamanan · Ubah Passcode" className="lg:col-span-2">
+          <ChangePasscodeForm />
+        </Section>
       </div>
 
       <div className="sticky bottom-4 mt-8 flex justify-center">
